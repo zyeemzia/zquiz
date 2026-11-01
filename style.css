@@ -61,6 +61,7 @@ button.ans{cursor:pointer}button.ans:active{transform:translateY(3px);box-shadow
 .pav{font-size:44px}#pod1 .pav{font-size:64px;animation:bob 1.6s ease-in-out infinite}@keyframes bob{50%{transform:translateY(-8px)}}
 .ptitle{font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:var(--acc2)}
 .awards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 14px}.award{display:grid;gap:2px;text-align:center;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;overflow-wrap:anywhere}.award div{font-size:30px}
+.lg{width:auto}.tbar{height:6px;border-radius:9px;background:rgba(255,255,255,.14);overflow:hidden}.tbar i{display:block;height:100%;background:var(--acc2);transform-origin:left;animation:shrink linear forwards}@keyframes shrink{to{transform:scaleX(0)}}
 /* Player */
 .pscreen{flex:1;display:flex;flex-direction:column;padding:12px;gap:10px;min-height:100dvh}
 .pbar{display:flex;justify-content:space-between;font-weight:700;gap:8px}
