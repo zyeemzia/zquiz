@@ -6,17 +6,18 @@ const urlLang = new URLSearchParams(location.search).get('lang');
 let lang = ['en', 'bn', 'fr'].includes(urlLang) ? urlLang : store.get('lang', (navigator.language || 'en').slice(0, 2));
 if (!['en', 'bn', 'fr'].includes(lang)) lang = 'en';
 document.documentElement.lang = lang;
-const t = s => (window.ZQ_I18N[lang] && window.ZQ_I18N[lang][s]) || s;
+const t = s => (window.ZQ_I18N[lang] && (window.ZQ_I18N[lang][s] || window.ZQ_I18N_MORE[lang][s])) || s;
 const toast = m => { const el = $('#toast'); el.textContent = m; el.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('on'), 2800); };
 const SHAPES = ['★', '⬢', '☾', '⚡'], AVATARS = ['🦊', '🐯', '🐼', '🦄', '🐸', '🐙', '🦉', '🐝', '🚀', '👾', '🤖', '🌟', '🔥', '🌈', '⚽', '🎧'], RX = ['🎉', '🔥', '😂', '😮', '👏', '💜'];
 const TYPES = { quiz: 'Multiple choice', tf: 'True or false', multi: 'Pick several', type: 'Type the answer', slider: 'Slider', order: 'Put in order', poll: 'Poll (no score)', cloud: 'Word cloud (no score)' };
 const NAMES1 = ['Swift', 'Lucky', 'Cosmic', 'Brave', 'Neon', 'Jolly', 'Mighty', 'Clever'], NAMES2 = ['Tiger', 'Comet', 'Otter', 'Falcon', 'Mango', 'Pixel', 'Rocket', 'Panda'];
 const API = window.ZQ_RELAY.replace(/^wss:/, 'https:').replace(/\/$/, '');
 const GOOGLE_CLIENT = '263569409532-o59be67f62mk9je2kgerpah84kg8vn4e.apps.googleusercontent.com';
-const SAVE_KEY = 'hostgame';
+const SAVE_KEY = 'hostgame', THEMES = ['aurora', 'neon', 'sunrise', 'ocean'];
+const setTheme = x => { document.documentElement.dataset.theme = x || store.get('theme', 'aurora'); };
 let cur = { cleanup: null };
 document.documentElement.dataset.theme = store.get('theme', 'aurora');
-const leave = () => { if (cur.cleanup) cur.cleanup(); (cur.ceremony || []).forEach(clearTimeout); cur = { cleanup: null }; Music.stop(); clearInterval(window.__zt); app.onclick = app.oninput = null; };
+const leave = () => { setTheme(); if (cur.cleanup) cur.cleanup(); (cur.ceremony || []).forEach(clearTimeout); cur = { cleanup: null }; Music.stop(); clearInterval(window.__zt); app.onclick = app.oninput = null; };
 const clip = (text, ok) => (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => toast(ok), () => prompt(t('Copy this link'), text));
 
 /* Sound: all generated in the browser, so nothing needs downloading. */
@@ -120,7 +121,9 @@ function validateQuiz(o) {
     if (q.type === 'order') { if (!Array.isArray(q.order) || q.order.length < 2 || q.order.length > 6) return at + 'needs 2 to 6 items.'; c.order = q.order.map(String); }
     qs.push(c);
   }
-  return { id: /^[\w-]{1,40}$/.test(o.id || '') ? o.id : 'q' + Date.now().toString(36), title: String(o.title || 'Untitled quiz').slice(0, 80), emoji: [...String(o.emoji || '🎯')].slice(0, 4).join(''), desc: String(o.desc || '').slice(0, 140), qs };
+  const s = o.settings && typeof o.settings === 'object' ? o.settings : {};
+  const settings = { mode: ['classic', 'team', 'survival'].includes(s.mode) ? s.mode : 'classic', theme: THEMES.includes(s.theme) ? s.theme : '', count: Math.max(0, Math.floor(Number(s.count)) || 0), shuffle: !!s.shuffle, shuffleOpts: !!s.shuffleOpts, auto: !!s.auto };
+  return { id: /^[\w-]{1,40}$/.test(o.id || '') ? o.id : 'q' + Date.now().toString(36), title: String(o.title || 'Untitled quiz').slice(0, 80), emoji: [...String(o.emoji || '🎯')].slice(0, 4).join(''), desc: String(o.desc || '').slice(0, 140), settings, qs };
 }
 
 /* ---------- Home ---------- */
@@ -188,20 +191,28 @@ function maker(id) {
     if (q.type === 'order') return `<label>${esc(t('Items in the right order, one per line'))}<textarea data-f="${i},order">${esc((q.order || []).join('\n'))}</textarea></label>`;
     return `<p class="mut small">${esc(t('Players type a short word. Popular answers grow bigger.'))}</p>`;
   };
+  quiz.settings = Object.assign({ mode: 'classic', theme: '', count: 0, shuffle: false, shuffleOpts: false, auto: false }, quiz.settings);
   const draw = () => {
-    app.innerHTML = topbar(`<a class="btn sm ghost" href="#/library">${esc(t('Library'))}</a><button class="btn sm" id="save">${esc(t('Save'))}</button>`) + `<div class="wrap"><div class="card mq"><div class="two"><label>${esc(t('Quiz title'))}<input id="tt" value="${esc(quiz.title)}" placeholder="${esc(t('My amazing quiz'))}" maxlength="80"></label><label>${esc(t('Cover emoji'))}<input id="te" value="${esc(quiz.emoji)}"></label></div>
+    const S = quiz.settings, flag = (k, l) => `<label class="opt" style="display:flex"><input type="checkbox" data-s="${k}" style="width:24px" ${S[k] ? 'checked' : ''}> ${esc(t(l))}</label>`;
+    app.innerHTML = topbar(`<a class="btn sm ghost" href="#/library">${esc(t('Library'))}</a><button class="btn sm" id="save">${esc(t('Save'))}</button>`) + `<div class="wrap">${ZQ.isLocal() ? '' : signInBlock()}<div class="card mq"><div class="two"><label>${esc(t('Quiz title'))}<input id="tt" value="${esc(quiz.title)}" placeholder="${esc(t('My amazing quiz'))}" maxlength="80"></label><label>${esc(t('Cover emoji'))}<input id="te" value="${esc(quiz.emoji)}"></label></div>
+    <label>${esc(t('Description'))}<input id="td" value="${esc(quiz.desc || '')}" maxlength="140"></label>
+    <h3>${esc(t('Game settings'))}</h3><div class="two"><label>${esc(t('Game mode'))}<select data-s="mode">${[['classic', 'Classic: highest score wins'], ['team', 'Teams: four squads, average score'], ['survival', 'Survival: three lives each']].map(([k, v]) => `<option value="${k}" ${S.mode === k ? 'selected' : ''}>${esc(t(v))}</option>`).join('')}</select></label><label>${esc(t('Theme'))}<select data-s="theme"><option value="">${esc(t('Player’s choice'))}</option>${THEMES.map(x => `<option ${S.theme === x ? 'selected' : ''}>${x}</option>`).join('')}</select></label><label>${esc(t('Questions per game (0 = all)'))}<input type="number" min="0" max="${quiz.qs.length}" data-s="count" value="${S.count}"></label><label>${esc(t('Set all questions to seconds'))}<input type="number" min="5" max="120" id="allt" placeholder="20"></label></div>${flag('shuffle', 'Shuffle questions')}${flag('shuffleOpts', 'Shuffle answer options')}${flag('auto', 'Auto-advance, with no host clicks')}<p class="small mut" style="margin:0">${quiz.qs.length} ${esc(t('questions'))}</p></div>
+    <div class="card mq">
     <details><summary>🤖 ${esc(t('Draft with any AI chatbot, or import a file'))}</summary><p class="small mut">${esc(t('Copy this prompt into a chatbot, then paste its reply below. Check the facts before you play.'))}</p><textarea readonly id="aip">${esc(AI_PROMPT)}</textarea><div class="row"><button class="btn sm ghost" id="copy">${esc(t('Copy prompt'))}</button></div><label style="margin-top:8px">${esc(t('Paste the quiz JSON'))}<textarea id="pj"></textarea></label><input type="file" id="pf" accept=".json,application/json" aria-label="${esc(t('Import'))}" style="margin-top:8px"><div class="row" style="margin-top:8px"><button class="btn sm" id="imp">${esc(t('Import'))}</button><button class="btn sm ghost" id="exp">${esc(t('Download this quiz'))}</button></div></details></div>
-    ${quiz.qs.map((q, i) => `<div class="card mq"><div class="row"><b class="grow">${esc(t('Question'))} ${i + 1}</b><button class="btn sm ghost" data-up="${i}" aria-label="Move up">↑</button><button class="btn sm ghost" data-rm="${i}">${esc(t('Remove'))}</button></div>
+    ${quiz.qs.map((q, i) => `<div class="card mq"><div class="row"><b class="grow">${esc(t('Question'))} ${i + 1}</b><button class="btn sm ghost" data-up="${i}" aria-label="Move up">↑</button><button class="btn sm ghost" data-dup="${i}">${esc(t('Duplicate'))}</button><button class="btn sm ghost" data-rm="${i}">${esc(t('Remove'))}</button></div>
     <label>${esc(t('Question'))}<input data-f="${i},text" value="${esc(q.text)}" maxlength="300"></label>
     <div class="two"><label>${esc(t('Type'))}<select data-type="${i}">${Object.entries(TYPES).map(([k, v]) => `<option value="${k}" ${q.type === k ? 'selected' : ''}>${esc(t(v))}</option>`).join('')}</select></label><label>${esc(t('Seconds'))}<input type="number" min="5" max="120" data-f="${i},time" value="${q.time}"></label>${['poll', 'cloud'].includes(q.type) ? '' : `<label>${esc(t('Points'))}<select data-f="${i},points"><option value="1" ${q.points !== 2 && q.points !== 0 ? 'selected' : ''}>${esc(t('Standard'))}</option><option value="2" ${q.points === 2 ? 'selected' : ''}>${esc(t('Double'))}</option><option value="0" ${q.points === 0 ? 'selected' : ''}>${esc(t('None'))}</option></select></label>`}<label>${esc(t('Emoji (optional)'))}<input data-f="${i},emoji" value="${esc(q.emoji || '')}"></label></div>
     <label>${esc(t('Image link (optional, https)'))}<input data-f="${i},image" value="${esc(q.image || '')}"></label>${opts(q, i)}</div>`).join('')}
     <button class="btn ghost" id="add">+ ${esc(t('Add question'))}</button></div>`;
     const pf = $('#pf'); if (pf) pf.onchange = async () => { if (pf.files[0]) { $('#pj').value = await pf.files[0].text(); doImport(); } };
+    wireSignIn(draw);
   };
   const doImport = () => { try { const m = validateQuiz(JSON.parse($('#pj').value.replace(/^\s*```(json)?|```\s*$/g, ''))); if (typeof m === 'string') return toast(m); m.id = quiz.id; quiz = m; draw(); toast(t('Imported questions. Check them, then save.')); } catch (x) { toast(t('Not valid JSON.')); } };
   const defaults = k => ({ quiz: { options: ['', '', '', ''], correct: [0] }, tf: { options: [t('True') === 'True' ? 'True' : t('True'), 'False'], correct: [0] }, multi: { options: ['', '', '', ''], correct: [0, 1] }, poll: { options: ['', ''] }, type: { accept: [] }, slider: { min: 0, max: 100, answer: 50, tolerance: 0 }, order: { order: [] }, cloud: {} })[k];
   app.oninput = e => {
-    const d = e.target.dataset; if (e.target.id === 'tt') quiz.title = e.target.value; if (e.target.id === 'te') quiz.emoji = e.target.value;
+    const d = e.target.dataset; if (e.target.id === 'tt') quiz.title = e.target.value; if (e.target.id === 'te') quiz.emoji = e.target.value; if (e.target.id === 'td') quiz.desc = e.target.value;
+    if (d.s) quiz.settings[d.s] = e.target.type === 'checkbox' ? e.target.checked : d.s === 'count' ? Number(e.target.value) || 0 : e.target.value;
+    if (e.target.id === 'allt') { const n = Number(e.target.value); if (n >= 5 && n <= 120) { quiz.qs.forEach(q => { q.time = n; }); app.querySelectorAll('[data-f$=",time"]').forEach(x => { x.value = n; }); } }
     if (d.o) { const [i, k] = d.o.split(','); quiz.qs[i].options[k] = e.target.value; }
     if (d.c) { const [i, k] = d.c.split(',').map(Number), q = quiz.qs[i]; if (q.type === 'multi') { q.correct = e.target.checked ? [...new Set(q.correct.concat(k))] : q.correct.filter(x => x !== k); } else { q.correct = [k]; app.querySelectorAll(`[data-c^="${i},"]`).forEach(x => { x.checked = x === e.target; }); } }
     if (d.f) { const [i, k] = d.f.split(','), q = quiz.qs[i], v = e.target.value; if (k === 'accept') q.accept = v.split(',').map(s => s.trim()).filter(Boolean); else if (k === 'order') q.order = v.split('\n').map(s => s.trim()).filter(Boolean); else if (['time', 'min', 'max', 'answer', 'tolerance', 'points'].includes(k)) q[k] = Number(v); else q[k] = v; }
@@ -210,6 +221,7 @@ function maker(id) {
   app.onclick = e => {
     const b = e.target.closest('button'); if (!b) return; const d = b.dataset, bid = b.id;
     if (bid === 'add') { quiz.qs.push({ type: 'quiz', text: '', options: ['', '', '', ''], correct: [0], time: 20 }); draw(); }
+    if (d.dup != null) { if (quiz.qs.length < 100) { quiz.qs.splice(+d.dup + 1, 0, JSON.parse(JSON.stringify(quiz.qs[+d.dup]))); draw(); } }
     if (d.rm != null) { if (quiz.qs.length > 1) { quiz.qs.splice(+d.rm, 1); draw(); } }
     if (d.up != null && +d.up > 0) { const a = quiz.qs, n = +d.up; [a[n - 1], a[n]] = [a[n], a[n - 1]]; draw(); }
     if (bid === 'copy') clip(AI_PROMPT, t('Prompt copied'));
@@ -218,7 +230,7 @@ function maker(id) {
     if (bid === 'save') {
       const n1 = quiz.qs.findIndex(q => q.options && q.options.some(o => !o.trim())); if (n1 >= 0) return toast(t('Has an empty option:') + ' ' + (n1 + 1));
       const n2 = quiz.qs.findIndex(q => !q.text.trim()); if (n2 >= 0) return toast(t('Needs text:') + ' ' + (n2 + 1));
-      const m = validateQuiz(quiz); if (typeof m === 'string') return toast(m); m.id = quiz.id; saveQuiz(m); toast(t('Saved')); location.hash = '#/library';
+      const m = validateQuiz(quiz); if (typeof m === 'string') return toast(m); m.id = quiz.id; if (m.settings.count > m.qs.length) m.settings.count = 0; saveQuiz(m); toast(t('Saved')); location.hash = '#/library';
     }
   };
   draw();
@@ -227,14 +239,15 @@ function maker(id) {
 /* ---------- Host ---------- */
 function setup(id) {
   leave(); const q = findQuiz(id); if (!q) { location.hash = '#/library'; return; }
-  const m = store.get('hostopts', { mode: 'classic', auto: false, shuffle: false });
+  const m = Object.assign({ mode: 'classic', auto: false, shuffle: false, shuffleOpts: false, count: 0 }, store.get('hostopts', {}), q.settings), n = q.qs.length;
   const check = (i, s) => `<label class="opt" style="display:flex"><input type="checkbox" id="${i}" style="width:24px"> ${esc(t(s))}</label>`;
   app.innerHTML = topbar() + `<div class="center"><div class="cover" style="font-size:56px">${esc(q.emoji)}</div><h1>${esc(q.title)}</h1><div class="card joinbox" style="text-align:left">
   <label>${esc(t('Game mode'))}<select id="mode"><option value="classic">${esc(t('Classic: highest score wins'))}</option><option value="team">${esc(t('Teams: four squads, average score'))}</option><option value="survival">${esc(t('Survival: three lives each'))}</option></select></label>
-  ${check('auto', 'Auto-advance, with no host clicks')}${check('shuf', 'Shuffle questions')}${check('voice', 'Read questions aloud')}${check('snd', 'Music and sound effects')}
+  <div class="two"><label>${esc(t('Number of questions'))} (1–${n})<input type="number" id="cnt" min="1" max="${n}" value="${m.count > 0 && m.count <= n ? m.count : n}"></label><label>${esc(t('Seconds per question (blank = as set)'))}<input type="number" id="secs" min="5" max="120"></label></div>
+  ${check('auto', 'Auto-advance, with no host clicks')}${check('shuf', 'Shuffle questions')}${check('shufo', 'Shuffle answer options')}${check('voice', 'Read questions aloud')}${check('snd', 'Music and sound effects')}
   <button class="btn big" id="go">${esc(t('Open lobby'))}</button></div></div>`;
-  $('#mode').value = m.mode; $('#auto').checked = m.auto; $('#shuf').checked = m.shuffle; $('#voice').checked = store.get('voice', false); $('#snd').checked = Music.on;
-  $('#go').onclick = () => { const o = { mode: $('#mode').value, auto: $('#auto').checked, shuffle: $('#shuf').checked }; store.set('hostopts', o); store.set('voice', $('#voice').checked); Music.on = $('#snd').checked; store.set('sound', Music.on); Music.ac(); host(q, o); };
+  $('#mode').value = m.mode; $('#auto').checked = m.auto; $('#shuf').checked = m.shuffle; $('#shufo').checked = m.shuffleOpts; $('#voice').checked = store.get('voice', false); $('#snd').checked = Music.on;
+  $('#go').onclick = () => { const o = { mode: $('#mode').value, auto: $('#auto').checked, shuffle: $('#shuf').checked, shuffleOpts: $('#shufo').checked }; store.set('hostopts', o); o.count = Math.min(n, Math.max(1, Math.floor(Number($('#cnt').value)) || n)); const sec = Number($('#secs').value); if (sec) o.time = Math.min(120, Math.max(5, sec)); if (q.settings && q.settings.theme) o.theme = q.settings.theme; store.set('voice', $('#voice').checked); Music.on = $('#snd').checked; store.set('sound', Music.on); Music.ac(); host(q, o); };
 }
 function host(quiz, opts, saved) {
   leave(); if (location.hash !== '#/host') history.replaceState(null, '', '#/host');
@@ -251,6 +264,7 @@ function host(quiz, opts, saved) {
     draw();
   };
   g = saved ? ZQ.Game.restore(saved.game, send, onChange) : new ZQ.Game(quiz, opts, send, onChange);
+  setTheme(g.opts.theme);
   const connect = () => { net = new ZQ.Net(pin, 'host', hostId, (from, m) => { if (m && m.t === 'gone') { const p = g.players.get(from); if (p) p.connected = false; return; } g.handle(from, m); }, (s, code) => {
     if (s === 'rejected' && code === 4001) { if (saved) { store.del(SAVE_KEY); location.hash = '#/'; return; } if (attempts++ < 5) { net.close(); pin = newPin(); connect(); lobby(); } }
     if (s === 'retry') toast(t('Reconnecting…'));
@@ -364,7 +378,7 @@ function playerView(sendUp, soloExit) {
   return {
     P,
     onMsg(m) {
-      if (m.t === 'welcome') { P.me = m.me; return; }
+      if (m.t === 'welcome') { P.me = m.me; if (m.me.theme) setTheme(m.me.theme); return; }
       if (m.t === 'half') { P.removed = m.remove; drawQ(); return; }
       if (m.t === 'locked') { if (P.phase === 'answer' && !P.picked) { P.picked = true; say(t('Locked in!'), esc(t('Waiting for the others…'))); } return; }
       if (m.t === 'you') {
@@ -424,7 +438,8 @@ function soloGame(q, checker) {
   let view, g; const pid = 'you';
   const send = (to, m) => { if (to === '*' || to === pid) setTimeout(() => { if (cur.g === g) view.onMsg(m); }, 0); };
   const exit = { next: () => { if (g.phase === 'board') g.next(); } };
-  g = new ZQ.Game(q, { mode: 'classic', getMs: 1500, checker }, send, ev => { if (ev === 'phase' && g.phase === 'reveal') setTimeout(() => { if (g.phase === 'reveal') g.board(); }, 2400); });
+  const S = (!checker && q.settings) || {};
+  g = new ZQ.Game(q, { mode: 'classic', getMs: 1500, checker, shuffle: S.shuffle, shuffleOpts: S.shuffleOpts, count: S.count, theme: S.theme }, send, ev => { if (ev === 'phase' && g.phase === 'reveal') setTimeout(() => { if (g.phase === 'reveal') g.board(); }, 2400); });
   cur.g = g;
   view = playerView(m => g.handle(pid, m), exit);
   g.addPlayer(pid, store.get('name', '') || 'You', store.get('avatar', '🦊'));

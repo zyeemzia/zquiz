@@ -40,7 +40,19 @@ class Game {
     this.quiz = quiz; this.opts = Object.assign({ mode: 'classic', auto: false, shuffle: false, locked: false }, opts);
     this.send = send; this.onChange = onChange || (() => {});
     this.players = new Map(); this.banned = new Set(); this.phase = 'lobby'; this.i = -1; this.nextPub = 1; this.log = []; this.t = null; this.last = { t: 'phase', phase: 'lobby' }; this.answers = new Map();
-    this.qs = (this.opts.shuffle ? ZQ.shuffle(quiz.qs) : quiz.qs).map(q => q.type === 'order' && q.order ? Object.assign({}, q, { _shuffled: ZQ.shuffle(q.order) }) : q);
+    /* Host choices: shuffle first, so a shorter game is a random pick rather than always the opening questions. */
+    let qs = this.opts.shuffle ? ZQ.shuffle(quiz.qs) : quiz.qs.slice();
+    if (this.opts.count > 0) qs = qs.slice(0, this.opts.count);
+    this.qs = qs.map(q => {
+      const c = Object.assign({}, q);
+      if (this.opts.time > 0) c.time = this.opts.time;
+      if (q.type === 'order' && q.order) c._shuffled = ZQ.shuffle(q.order);
+      if (this.opts.shuffleOpts && q.options && q.correct && q.type !== 'tf') {
+        const perm = ZQ.shuffle(q.options.map((_, i) => i));
+        c.options = perm.map(i => q.options[i]); c.correct = q.correct.map(k => perm.indexOf(k));
+      } else if (this.opts.shuffleOpts && q.options && q.type === 'poll') c.options = ZQ.shuffle(q.options);
+      return c;
+    });
   }
   get q() { return this.qs[this.i]; }
   list() { return [...this.players.values()]; }
@@ -55,7 +67,7 @@ class Game {
     return { quiz: this.quiz, opts: this.opts, qs: this.qs, phase: this.phase, i: this.i, nextPub: this.nextPub, log: this.log, last: this.last, started: this.started, players: this.list(), banned: [...this.banned], answers: [...this.answers.entries()] };
   }
   static restore(s, send, onChange) {
-    const g = new Game(s.quiz, Object.assign({}, s.opts, { shuffle: false }), send, onChange);
+    const g = new Game(s.quiz, s.opts, send, onChange);
     g.qs = s.qs; g.phase = s.phase; g.i = s.i; g.nextPub = s.nextPub; g.log = s.log; g.last = s.last; g.started = s.started;
     s.players.forEach(p => g.players.set(p.pid, p)); g.banned = new Set(s.banned); g.answers = new Map(s.answers);
     return g;
@@ -88,7 +100,7 @@ class Game {
     this.send(pid, { t: 'welcome', me: this.me(p) }); this.send(pid, this.last); this.onChange('join', p);
     return p;
   }
-  me(p) { return { name: p.name, avatar: p.avatar, score: p.score, streak: p.streak, lives: p.lives, out: p.out, team: this.opts.mode === 'team' ? p.team : null, mode: this.opts.mode, power: p.power, rank: this.ranked().indexOf(p) + 1 }; }
+  me(p) { return { name: p.name, avatar: p.avatar, score: p.score, streak: p.streak, lives: p.lives, out: p.out, team: this.opts.mode === 'team' ? p.team : null, mode: this.opts.mode, theme: this.opts.theme, power: p.power, rank: this.ranked().indexOf(p) + 1 }; }
   kick(pid) { this.banned.add(pid); this.send(pid, { t: 'kicked' }); this.players.delete(pid); this.onChange('leave'); if (this.phase === 'answer') this.maybeClose(); }
   start() { this.next(); }
   next() {
